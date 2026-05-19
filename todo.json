@@ -1,0 +1,27 @@
+[
+  {
+    "id": 1,
+    "title": "Beli kopi di minimarket",
+    "status": "Selesai"
+  },
+  {
+    "id": 2,
+    "title": "Belajar pemrograman Node.js",
+    "status": "Belum Selesai"
+  },
+  {
+    "id": 3,
+    "title": "kuliah Manajemen Proyek",
+    "status": "Belum Selesai"
+  },
+  {
+    "id": 4,
+    "title": "Belajar Node.js dan JSON",
+    "status": "Selesai"
+  },
+  {
+    "id": 5,
+    "title": "Tugas Makala",
+    "status": "Selesai"
+  }
+]

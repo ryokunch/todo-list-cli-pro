@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  todo-app:
+    # 1. Beritahu Compose untuk mem-build Dockerfile di folder saat ini
+    build: .
+    # 2. Berikan nama container yang konsisten
+    container_name: running-todo-compose
+    # 3. Konfigurasi wajib agar terminal CLI tetap interaktif (pengganti -it)
+    stdin_open: true
+    tty: true
+    # 4. Hubungkan database JSON lokal ke dalam container (pengganti -v)
+    volumes:
+      - ./todo.json:/app/todo.json
