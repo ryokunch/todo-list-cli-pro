@@ -1,3 +1,10 @@
 node_modules/
 npm-debug.log
 .DS_Store
+
+# Mengabaikan dump data json lama (karena sudah pakai Postgres)
+todo.json
+
+# Mengabaikan folder data postgres jika sewaktu-waktu terekspos lokal
+pgdata/
+.env

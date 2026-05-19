@@ -1,45 +1,58 @@
-const fs = require('fs');
 const inquirer = require('inquirer');
-const path = './todo.json';
+const { Pool } = require('pg');
 
-// Fungsi dasar membaca JSON
-const readData = () => {
-    try {
-        const dataBuffer = fs.readFileSync(path);
-        return JSON.parse(dataBuffer.toString());
-    } catch (e) {
-        return [];
-    }
-};
+// 1. KONFIGURASI KONEKSI DATABASE POSTGRESQL
+const pool = new Pool({
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'ryo_user',
+  password: process.env.DB_PASSWORD || 'rahasia_ryo',
+  database: process.env.DB_NAME || 'todo_db',
+  port: process.env.DB_PORT || 5432,
+});
 
-// Fungsi dasar menyimpan JSON
-const saveData = (data) => {
-    fs.writeFileSync(path, JSON.stringify(data, null, 2));
+// 2. INISIALISASI TABEL OTOMATIS SAAT APLIKASI DIJALANKAN
+async function initDatabase() {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS todos (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      deadline DATE NOT NULL,
+      status VARCHAR(20) DEFAULT 'Belum Selesai'
+    );
+  `;
+  await pool.query(createTableQuery);
+}
+
+// FORMAT TANGGAL KE YYYY-MM-DD AGAR RAPI DI CLI
+const formatTanggal = (dateStr) => {
+  const d = new Date(dateStr);
+  return d.toISOString().split('T')[0];
 };
 
 // ================= MENU UTAMA INTERAKTIF =================
 
-const mainMenu = () => {
-    console.clear(); 
-    console.log('===================================================');
-    console.log('             APLIKASI TO-DO LIST PRO               ');
-    console.log('===================================================');
+async function mainMenu() {
+  console.clear(); 
+  console.log('===================================================');
+  console.log('             APLIKASI TO-DO LIST PRO               ');
+  console.log('===================================================');
 
-    // --- LOGIKA HITUNG STATISTIK (DASHBOARD) ---
-    const todos = readData();
+  try {
+    // --- LOGIKA HITUNG STATISTIK LANGSUNG DARI SQL ---
+    const allQuery = await pool.query('SELECT * FROM todos');
+    const todos = allQuery.rows;
+
     const totalTugas = todos.length;
-    
     const selesai = todos.filter(t => t.status === 'Selesai').length;
     const belumSelesai = todos.filter(t => t.status === 'Belum Selesai').length;
     
-    // Menghitung yang terlambat
     const hariIni = new Date();
     hariIni.setHours(0, 0, 0, 0);
     
     const terlambat = todos.filter(t => {
-        const tanggalDeadline = new Date(t.deadline);
-        tanggalDeadline.setHours(0, 0, 0, 0);
-        return t.status === 'Belum Selesai' && tanggalDeadline < hariIni;
+      const tanggalDeadline = new Date(t.deadline);
+      tanggalDeadline.setHours(0, 0, 0, 0);
+      return t.status === 'Belum Selesai' && tanggalDeadline < hariIni;
     }).length;
 
     // Menampilkan Dashboard Mini ke Terminal
@@ -51,268 +64,250 @@ const mainMenu = () => {
     console.log('===================================================');
 
     // Menampilkan Pilihan Menu
-    inquirer.prompt([
-        {
-            type: 'list',
-            name: 'pilihan',
-            message: 'Silakan pilih menu:',
-            choices: [
-                '1. Lihat Semua Tugas (Urut Batas Waktu)',
-                '2. Tambah Tugas Baru + Deadline',
-                '3. Tandai Tugas Selesai',
-                '4. Hapus Tugas',
-                '5. Edit Tugas (Judul / Deadline)',
-                '6. Keluar Aplikasi'
-            ]
-        }
-    ]).then((jawaban) => {
-        switch (jawaban.pilihan) {
-            case '1. Lihat Semua Tugas (Urut Batas Waktu)':
-                lihatTugas();
-                break;
-            case '2. Tambah Tugas Baru + Deadline':
-                tambahTugas();
-                break;
-            case '3. Tandai Tugas Selesai':
-                selesaiTugas();
-                break;
-            case '4. Hapus Tugas':
-                hapusTugas();
-                break;
-            case '5. Edit Tugas (Judul / Deadline)':
-                editTugas();
-                break;
-            case '6. Keluar Aplikasi':
-                console.log('Terima kasih sudah menggunakan aplikasi! 👋');
-                process.exit();
-        }
-    });
-};
+    const jawaban = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'pilihan',
+        message: 'Silakan pilih menu:',
+        choices: [
+          '1. Lihat Semua Tugas (Urut Batas Waktu)',
+          '2. Tambah Tugas Baru + Deadline',
+          '3. Tandai Tugas Selesai',
+          '4. Hapus Tugas',
+          '5. Edit Tugas (Judul / Deadline)',
+          '6. Keluar Aplikasi'
+        ]
+      }
+    ]);
 
-// ================= FUNGSI FITUR-FITUR =================
-
-// 1. LIHAT TUGAS (Dengan Deteksi Overdue & Sisa Hari)
-const lihatTugas = () => {
-    const todos = readData();
-    console.log('\n--- DAFTAR TUGAS ANDA ---');
-    if (todos.length === 0) {
-        console.log('📌 Belum ada tugas terdaftar.');
-    } else {
-        const hariIni = new Date();
-        hariIni.setHours(0, 0, 0, 0);
-
-        todos.forEach((todo) => {
-            const statusIcon = todo.status === 'Selesai' ? 'X' : ' ';
-            const tanggalDeadline = new Date(todo.deadline);
-            tanggalDeadline.setHours(0, 0, 0, 0);
-
-            let labelWaktu = '';
-            
-            if (todo.status === 'Selesai') {
-                labelWaktu = '✅ Berhasil Selesai';
-            } else if (tanggalDeadline < hariIni) {
-                labelWaktu = '🚨 TERLAMBAT / OVERDUE!';
-            } else if (tanggalDeadline.getTime() === hariIni.getTime()) {
-                labelWaktu = '⚠️ HARI INI!';
-            } else {
-                const selisihWaktu = tanggalDeadline.getTime() - hariIni.getTime();
-                const selisihHari = Math.ceil(selisihWaktu / (1000 * 3600 * 24));
-                labelWaktu = `⏳ sisa ${selisihHari} hari lagi`;
-            }
-
-            console.log(`${todo.id}. [${statusIcon}] ${todo.title}`);
-            console.log(`   👉 Deadline: ${todo.deadline} [${labelWaktu}]`);
-            console.log('---------------------------------');
-        });
+    switch (jawaban.pilihan) {
+      case '1. Lihat Semua Tugas (Urut Batas Waktu)':
+        await lihatTugas();
+        break;
+      case '2. Tambah Tugas Baru + Deadline':
+        await tambahTugas();
+        break;
+      case '3. Tandai Tugas Selesai':
+        await selesaiTugas();
+        break;
+      case '4. Hapus Tugas':
+        await hapusTugas();
+        break;
+      case '5. Edit Tugas (Judul / Deadline)':
+        await editTugas();
+        break;
+      case '6. Keluar Aplikasi':
+        console.log('Terima kasih sudah menggunakan aplikasi! 👋');
+        await pool.end(); // Tutup koneksi pool DB sebelum exit
+        process.exit();
     }
+  } catch (error) {
+    console.error('🚨 Terjadi masalah koneksi database:', error.message);
     kembaliKeMenu();
-};
+  }
+}
 
-// 2. TAMBAH TUGAS (Dengan Validasi Tanggal YYYY-MM-DD)
-const tambahTugas = () => {
-    inquirer.prompt([
-        {
-            type: 'input',
-            name: 'judul',
-            message: 'Masukkan nama/judul tugas baru:'
-        },
-        {
-            type: 'input',
-            name: 'deadline',
-            message: 'Masukkan tenggat waktu (Format: YYYY-MM-DD, contoh 2026-05-25):',
-            validate: function(value) {
-                const pass = value.match(/^\d{4}-\d{2}-\d{2}$/);
-                if (pass) return true;
-                return 'Format tanggal salah! Mohon gunakan format YYYY-MM-DD';
-            }
-        }
-    ]).then((jawaban) => {
-        if (!jawaban.judul.trim()) {
-            console.log('❌ Judul tidak boleh kosong!');
-        } else {
-            const todos = readData();
-            
-            todos.push({
-                id: 0,
-                title: jawaban.judul,
-                deadline: jawaban.deadline,
-                status: 'Belum Selesai'
-            });
+// ================= FUNGSI FITUR-FITUR CRUDS =================
 
-            // Urutkan berdasarkan deadline terdekat
-            todos.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+// 1. LIHAT TUGAS (Menggunakan ORDER BY pada SQL)
+async function lihatTugas() {
+  console.log('\n--- DAFTAR TUGAS ANDA (URUT DEADLINE) ---');
+  
+  // Mengurutkan langsung lewat kueri SQL agar efisien
+  const res = await pool.query('SELECT * FROM todos ORDER BY deadline ASC');
+  const todos = res.rows;
 
-            // Reset urutan ID
-            const updatedTodos = todos.map((todo, index) => {
-                todo.id = index + 1;
-                return todo;
-            });
+  if (todos.length === 0) {
+    console.log('📌 Belum ada tugas terdaftar.');
+  } else {
+    const hariIni = new Date();
+    hariIni.setHours(0, 0, 0, 0);
 
-            saveData(updatedTodos);
-            console.log(`✅ Tugas "${jawaban.judul}" berhasil ditambahkan!`);
-        }
-        kembaliKeMenu();
+    todos.forEach((todo) => {
+      const statusIcon = todo.status === 'Selesai' ? 'X' : ' ';
+      const tanggalDeadline = new Date(todo.deadline);
+      tanggalDeadline.setHours(0, 0, 0, 0);
+
+      let labelWaktu = '';
+      if (todo.status === 'Selesai') {
+        labelWaktu = '✅ Berhasil Selesai';
+      } else if (tanggalDeadline < hariIni) {
+        labelWaktu = '🚨 TERLAMBAT / OVERDUE!';
+      } else if (tanggalDeadline.getTime() === hariIni.getTime()) {
+        labelWaktu = '⚠️ HARI INI!';
+      } else {
+        const selisihWaktu = tanggalDeadline.getTime() - hariIni.getTime();
+        const selisihHari = Math.ceil(selisihWaktu / (1000 * 3600 * 24));
+        labelWaktu = `⏳ sisa ${selisihHari} hari lagi`;
+      }
+
+      console.log(`${todo.id}. [${statusIcon}] ${todo.title}`);
+      console.log(`   👉 Deadline: ${formatTanggal(todo.deadline)} [${labelWaktu}]`);
+      console.log('---------------------------------');
     });
-};
+  }
+  kembaliKeMenu();
+}
 
-// 3. TANDAI SELESAI
-const selesaiTugas = () => {
-    const todos = readData();
-    if (todos.length === 0) {
-        console.log('\n📌 Tidak ada tugas yang bisa diselesaikan.');
-        return kembaliKeMenu();
+// 2. TAMBAH TUGAS (INSERT INTO)
+async function tambahTugas() {
+  const jawaban = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'judul',
+      message: 'Masukkan nama/judul tugas baru:'
+    },
+    {
+      type: 'input',
+      name: 'deadline',
+      message: 'Masukkan tenggat waktu (Format: YYYY-MM-DD):',
+      validate: function(value) {
+        const pass = value.match(/^\d{4}-\d{2}-\d{2}$/);
+        if (pass) return true;
+        return 'Format tanggal salah! Mohon gunakan format YYYY-MM-DD';
+      }
     }
+  ]);
 
-    const pilihanTugas = todos.map(t => `${t.id}. [${t.status === 'Selesai' ? 'X' : ' '}] ${t.title}`);
+  if (!jawaban.judul.trim()) {
+    console.log('❌ Judul tidak boleh kosong!');
+  } else {
+    const query = 'INSERT INTO todos (title, deadline) VALUES ($1, $2)';
+    await pool.query(query, [jawaban.judul, jawaban.deadline]);
+    console.log(`\n✅ Tugas "${jawaban.judul}" berhasil disimpan ke PostgreSQL!`);
+  }
+  kembaliKeMenu();
+}
 
-    inquirer.prompt([
-        {
-            type: 'list',
-            name: 'tugasDipilih',
-            message: 'Pilih tugas yang sudah selesai:',
-            choices: pilihanTugas
-        }
-    ]).then((jawaban) => {
-        const idTugas = parseInt(jawaban.tugasDipilih.split('.')[0]);
-        const todo = todos.find(t => t.id === idTugas);
-        
-        if (todo) {
-            todo.status = 'Selesai';
-            saveData(todos);
-            console.log(`👍 Tugas ID ${idTugas} berhasil diselesaikan!`);
-        }
-        kembaliKeMenu();
-    });
-};
+// 3. TANDAI SELESAI (UPDATE)
+async function selesaiTugas() {
+  const res = await pool.query('SELECT * FROM todos ORDER BY deadline ASC');
+  const todos = res.rows;
 
-// 4. HAPUS TUGAS
-const hapusTugas = () => {
-    const todos = readData();
-    if (todos.length === 0) {
-        console.log('\n📌 Tidak ada tugas yang bisa dihapus.');
-        return kembaliKeMenu();
+  if (todos.length === 0) {
+    console.log('\n📌 Tidak ada tugas yang bisa diselesaikan.');
+    return kembaliKeMenu();
+  }
+
+  const pilihanTugas = todos.map(t => ({
+    name: `${t.id}. [${t.status === 'Selesai' ? 'X' : ' '}] ${t.title}`,
+    value: t.id
+  }));
+
+  const jawaban = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'idTugas',
+      message: 'Pilih tugas yang sudah selesai:',
+      choices: pilihanTugas
     }
+  ]);
 
-    const pilihanTugas = todos.map(t => `${t.id}. ${t.title} (${t.deadline})`);
+  const query = "UPDATE todos SET status = 'Selesai' WHERE id = $1";
+  await pool.query(query, [jawaban.idTugas]);
+  console.log(`\n👍 Tugas ID ${jawaban.idTugas} berhasil diselesaikan di database!`);
+  kembaliKeMenu();
+}
 
-    inquirer.prompt([
-        {
-            type: 'list',
-            name: 'tugasDihapus',
-            message: 'Pilih tugas yang ingin dihapus secara permanen:',
-            choices: pilihanTugas
-        }
-    ]).then((jawaban) => {
-        const idTugas = parseInt(jawaban.tugasDihapus.split('.')[0]);
-        const filteredTodos = todos.filter(t => t.id !== idTugas);
-        
-        const updatedTodos = filteredTodos.map((todo, index) => {
-            todo.id = index + 1;
-            return todo;
-        });
+// 4. HAPUS TUGAS (DELETE)
+async function hapusTugas() {
+  const res = await pool.query('SELECT * FROM todos ORDER BY deadline ASC');
+  const todos = res.rows;
 
-        saveData(updatedTodos);
-        console.log(`🗑️ Tugas berhasil dihapus dari file JSON!`);
-        kembaliKeMenu();
-    });
-};
+  if (todos.length === 0) {
+    console.log('\n📌 Tidak ada tugas yang bisa dihapus.');
+    return kembaliKeMenu();
+  }
 
-// 5. FITUR BARU: EDIT TUGAS (JUDUL & DEADLINE)
-const editTugas = () => {
-    const todos = readData();
-    if (todos.length === 0) {
-        console.log('\n📌 Tidak ada tugas yang bisa diedit.');
-        return kembaliKeMenu();
+  const pilihanTugas = todos.map(t => ({
+    name: `${t.id}. ${t.title} (${formatTanggal(t.deadline)})`,
+    value: t.id
+  }));
+
+  const jawaban = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'idTugas',
+      message: 'Pilih tugas yang ingin dihapus secara permanen:',
+      choices: pilihanTugas
     }
+  ]);
 
-    const pilihanTugas = todos.map(t => `${t.id}. ${t.title} [Deadline: ${t.deadline}]`);
+  const query = "DELETE FROM todos WHERE id = $1";
+  await pool.query(query, [jawaban.idTugas]);
+  console.log(`\n🗑️ Tugas ID ${jawaban.idTugas} berhasil dihapus dari PostgreSQL!`);
+  kembaliKeMenu();
+}
 
-    inquirer.prompt([
-        {
-            type: 'list',
-            name: 'tugasDiedit',
-            message: 'Pilih tugas yang ingin diubah:',
-            choices: pilihanTugas
-        },
-        {
-            type: 'input',
-            name: 'judulBaru',
-            message: 'Masukkan judul baru (Kosongkan jika tidak ingin mengubah judul):'
-        },
-        {
-            type: 'input',
-            name: 'deadlineBaru',
-            message: 'Masukkan deadline baru YYYY-MM-DD (Kosongkan jika tidak ingin mengubah deadline):',
-            validate: function(value) {
-                if (value === '') return true; // Boleh kosong jika tidak diubah
-                const pass = value.match(/^\d{4}-\d{2}-\d{2}$/);
-                if (pass) return true;
-                return 'Format tanggal salah! Gunakan YYYY-MM-DD atau biarkan kosong.';
-            }
-        }
-    ]).then((jawaban) => {
-        const idTugas = parseInt(jawaban.tugasDiedit.split('.')[0]);
-        const todo = todos.find(t => t.id === idTugas);
+// 5. EDIT TUGAS (UPDATE DINAMIS)
+async function editTugas() {
+  const res = await pool.query('SELECT * FROM todos ORDER BY deadline ASC');
+  const todos = res.rows;
 
-        if (todo) {
-            // Jika user mengisi judul baru, timpa yang lama
-            if (jawaban.judulBaru.trim() !== '') {
-                todo.title = jawaban.judulBaru;
-            }
-            // Jika user mengisi deadline baru, timpa yang lama
-            if (jawaban.deadlineBaru.trim() !== '') {
-                todo.deadline = jawaban.deadlineBaru;
-            }
+  if (todos.length === 0) {
+    console.log('\n📌 Tidak ada tugas yang bisa diedit.');
+    return kembaliKeMenu();
+  }
 
-            // Jika ada perubahan deadline, urutkan ulang tugasnya
-            todos.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+  const pilihanTugas = todos.map(t => ({
+    name: `${t.id}. ${t.title} [Deadline: ${formatTanggal(t.deadline)}]`,
+    value: t.id
+  }));
 
-            // Susun ulang ID agar tetap berurutan runtut
-            const updatedTodos = todos.map((t, index) => {
-                t.id = index + 1;
-                return t;
-            });
+  const jawaban = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'idTugas',
+      message: 'Pilih tugas yang ingin diubah:',
+      choices: pilihanTugas
+    },
+    {
+      type: 'input',
+      name: 'judulBaru',
+      message: 'Masukkan judul baru (Kosongkan jika tidak diubah):'
+    },
+    {
+      type: 'input',
+      name: 'deadlineBaru',
+      message: 'Masukkan deadline baru YYYY-MM-DD (Kosongkan jika tidak diubah):',
+      validate: function(value) {
+        if (value === '') return true;
+        const pass = value.match(/^\d{4}-\d{2}-\d{2}$/);
+        if (pass) return true;
+        return 'Format tanggal salah! Gunakan YYYY-MM-DD atau biarkan kosong.';
+      }
+    }
+  ]);
 
-            saveData(updatedTodos);
-            console.log(`\n✅ Data tugas ID ${idTugas} berhasil diperbarui!`);
-        }
-        kembaliKeMenu();
-    });
-};
+  const todoSkg = todos.find(t => t.id === jawaban.idTugas);
+  const judulFinal = jawaban.judulBaru.trim() !== '' ? jawaban.judulBaru : todoSkg.title;
+  const deadlineFinal = jawaban.deadlineBaru.trim() !== '' ? jawaban.deadlineBaru : todoSkg.deadline;
 
-// Fungsi pembantu agar aplikasi kembali ke menu utama
-const kembaliKeMenu = () => {
-    console.log('---------------------------------');
-    inquirer.prompt([
-        {
-            type: 'input',
-            name: 'lanjut',
-            message: 'Tekan ENTER untuk kembali ke menu utama...'
-        }
-    ]).then(() => {
-        mainMenu();
-    });
-};
+  const query = 'UPDATE todos SET title = $1, deadline = $2 WHERE id = $3';
+  await pool.query(query, [judulFinal, deadlineFinal, jawaban.idTugas]);
+  
+  console.log(`\n✅ Data tugas ID ${jawaban.idTugas} berhasil diperbarui di PostgreSQL!`);
+  kembaliKeMenu();
+}
 
-// Jalankan aplikasi pertama kali
-mainMenu();
+// KEMBALI KE MENU UTAMA
+function kembaliKeMenu() {
+  console.log('---------------------------------');
+  inquirer.prompt([
+    {
+      type: 'input',
+      name: 'lanjut',
+      message: 'Tekan ENTER untuk kembali ke menu utama...'
+    }
+  ]).then(() => {
+    mainMenu();
+  });
+}
+
+// STARTING POINT APLIKASI
+async function startApp() {
+  await initDatabase(); // Bikin tabel dulu jika belum ada
+  await mainMenu();     // Buka menu utama
+}
+
+startApp();

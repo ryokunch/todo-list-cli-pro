@@ -1,14 +1,33 @@
 version: '3.8'
 
 services:
+  # 1. Layanan Aplikasi Node.js kamu
   todo-app:
-    # 1. Beritahu Compose untuk mem-build Dockerfile di folder saat ini
     build: .
-    # 2. Berikan nama container yang konsisten
     container_name: running-todo-compose
-    # 3. Konfigurasi wajib agar terminal CLI tetap interaktif (pengganti -it)
     stdin_open: true
     tty: true
-    # 4. Hubungkan database JSON lokal ke dalam container (pengganti -v)
+    depends_on:
+      - db # Memastikan database jalan duluan sebelum aplikasi dibuka
+    environment:
+      - DB_HOST=db
+      - DB_USER=ryo_user
+      - DB_PASSWORD=rahasia_ryo
+      - DB_NAME=todo_db
+      - DB_PORT=5432
+
+  # 2. Layanan Database PostgreSQL Asli
+  db:
+    image: postgres:16-alpine # Menggunakan versi Alpine yang hemat penyimpanan
+    container_name: postgres-todo-db
+    environment:
+      POSTGRES_USER: ryo_user
+      POSTGRES_PASSWORD: rahasia_ryo
+      POSTGRES_DB: todo_db
+    ports:
+      - "5432:5432"
     volumes:
-      - ./todo.json:/app/todo.json
+      - pgdata:/var/lib/postgresql/data # Agar data DB tidak hilang saat kontainer mati
+
+volumes:
+  pgdata: # Mengunci penyimpanan database di memori internal Docker
