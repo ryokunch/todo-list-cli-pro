@@ -7,4 +7,6 @@ todo.json
 
 # Mengabaikan folder data postgres jika sewaktu-waktu terekspos lokal
 pgdata/
+
+# WAJIB ADA: Mengunci file kredensial agar tetap berada di komputer lokal
 .env

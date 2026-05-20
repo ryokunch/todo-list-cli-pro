@@ -1,7 +1,16 @@
-const inquirer = require('inquirer');
+const express = require('express');
 const { Pool } = require('pg');
+const path = require('path');
+const inquirer = require('inquirer');
 
-// 1. KONFIGURASI KONEKSI DATABASE POSTGRESQL
+const app = express();
+const port = 2000;
+
+// Middleware Web Express
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+// 1. KONFIGURASI KONEKSI DATABASE POSTGRESQL (Terpusat)
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'ryo_user',
@@ -10,8 +19,9 @@ const pool = new Pool({
   port: process.env.DB_PORT || 5432,
 });
 
-// 2. INISIALISASI TABEL OTOMATIS SAAT APLIKASI DIJALANKAN
+// 2. INISIALISASI TABEL & INDEX OTOMATIS SAAT APLIKASI DIJALANKAN
 async function initDatabase() {
+  // Query untuk membuat tabel jika belum ada
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS todos (
       id SERIAL PRIMARY KEY,
@@ -21,24 +31,77 @@ async function initDatabase() {
     );
   `;
   await pool.query(createTableQuery);
+
+  // OPTIMASI: Membuat Index pada kolom deadline untuk mempercepat query ORDER BY (Web & CLI)
+  const createIndexQuery = `
+    CREATE INDEX IF NOT EXISTS idx_todos_deadline ON todos (deadline ASC);
+  `;
+  await pool.query(createIndexQuery);
 }
 
-// FORMAT TANGGAL KE YYYY-MM-DD AGAR RAPI DI CLI
+// FORMAT TANGGAL KE YYYY-MM-DD AGAR RAPI
 const formatTanggal = (dateStr) => {
   const d = new Date(dateStr);
   return d.toISOString().split('T')[0];
 };
 
-// ================= MENU UTAMA INTERAKTIF =================
+// =========================================================
+//            [BAGIAN A] ENDPOINT API UNTUK WEB
+// =========================================================
+
+// API: Ambil semua tugas
+app.get('/api/todos', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM todos ORDER BY deadline ASC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Tambah tugas baru
+app.post('/api/todos', async (req, res) => {
+  try {
+    const { title, deadline } = req.body;
+    await pool.query('INSERT INTO todos (title, deadline) VALUES ($1, $2)', [title, deadline]);
+    res.status(201).json({ message: 'Tugas berhasil ditambah!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Tandai selesai
+app.put('/api/todos/:id', async (req, res) => {
+  try {
+    await pool.query("UPDATE todos SET status = 'Selesai' WHERE id = $1", [req.params.id]);
+    res.json({ message: 'Tugas selesai!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Hapus tugas
+app.delete('/api/todos/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM todos WHERE id = $1', [req.params.id]);
+    res.json({ message: 'Tugas dihapus!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// =========================================================
+//         [BAGIAN B] MENU UTAMA INTERAKTIF CLI (INQUIRER)
+// =========================================================
 
 async function mainMenu() {
   console.clear(); 
   console.log('===================================================');
-  console.log('             APLIKASI TO-DO LIST PRO               ');
+  console.log('            APLIKASI TO-DO LIST PRO (HYBRID)       ');
   console.log('===================================================');
 
   try {
-    // --- LOGIKA HITUNG STATISTIK LANGSUNG DARI SQL ---
     const allQuery = await pool.query('SELECT * FROM todos');
     const todos = allQuery.rows;
 
@@ -55,27 +118,25 @@ async function mainMenu() {
       return t.status === 'Belum Selesai' && tanggalDeadline < hariIni;
     }).length;
 
-    // Menampilkan Dashboard Mini ke Terminal
-    console.log(` 📊 STATISTIK TUGAS ANDA saat ini:`);
+    console.log(` 📊 STATISTIK DATA (REAL-TIME DB):`);
     console.log(`    ▪ Total Tugas     : ${totalTugas}`);
     console.log(`    ▪ ✅ Selesai      : ${selesai}`);
     console.log(`    ▪ ⏳ Belum Selesai: ${belumSelesai}`);
     console.log(`    ▪ 🚨 Terlambat    : ${terlambat}`);
     console.log('===================================================');
 
-    // Menampilkan Pilihan Menu
     const jawaban = await inquirer.prompt([
       {
         type: 'list',
         name: 'pilihan',
-        message: 'Silakan pilih menu:',
+        message: 'Silakan pilih menu CLI:',
         choices: [
           '1. Lihat Semua Tugas (Urut Batas Waktu)',
           '2. Tambah Tugas Baru + Deadline',
           '3. Tandai Tugas Selesai',
           '4. Hapus Tugas',
           '5. Edit Tugas (Judul / Deadline)',
-          '6. Keluar Aplikasi'
+          '6. Keluar Mode CLI'
         ]
       }
     ]);
@@ -96,10 +157,9 @@ async function mainMenu() {
       case '5. Edit Tugas (Judul / Deadline)':
         await editTugas();
         break;
-      case '6. Keluar Aplikasi':
-        console.log('Terima kasih sudah menggunakan aplikasi! 👋');
-        await pool.end(); // Tutup koneksi pool DB sebelum exit
-        process.exit();
+      case '6. Keluar Mode CLI':
+        console.log('Keluar dari interface CLI. Server web tetap aktif berjalan! 🚀');
+        break;
     }
   } catch (error) {
     console.error('🚨 Terjadi masalah koneksi database:', error.message);
@@ -107,13 +167,9 @@ async function mainMenu() {
   }
 }
 
-// ================= FUNGSI FITUR-FITUR CRUDS =================
-
-// 1. LIHAT TUGAS (Menggunakan ORDER BY pada SQL)
+// 1. LIHAT TUGAS CLI
 async function lihatTugas() {
   console.log('\n--- DAFTAR TUGAS ANDA (URUT DEADLINE) ---');
-  
-  // Mengurutkan langsung lewat kueri SQL agar efisien
   const res = await pool.query('SELECT * FROM todos ORDER BY deadline ASC');
   const todos = res.rows;
 
@@ -149,14 +205,10 @@ async function lihatTugas() {
   kembaliKeMenu();
 }
 
-// 2. TAMBAH TUGAS (INSERT INTO)
+// 2. TAMBAH TUGAS CLI
 async function tambahTugas() {
   const jawaban = await inquirer.prompt([
-    {
-      type: 'input',
-      name: 'judul',
-      message: 'Masukkan nama/judul tugas baru:'
-    },
+    { type: 'input', name: 'judul', message: 'Masukkan nama/judul tugas baru:' },
     {
       type: 'input',
       name: 'deadline',
@@ -172,14 +224,13 @@ async function tambahTugas() {
   if (!jawaban.judul.trim()) {
     console.log('❌ Judul tidak boleh kosong!');
   } else {
-    const query = 'INSERT INTO todos (title, deadline) VALUES ($1, $2)';
-    await pool.query(query, [jawaban.judul, jawaban.deadline]);
-    console.log(`\n✅ Tugas "${jawaban.judul}" berhasil disimpan ke PostgreSQL!`);
+    await pool.query('INSERT INTO todos (title, deadline) VALUES ($1, $2)', [jawaban.judul, jawaban.deadline]);
+    console.log(`\n✅ Tugas "${jawaban.judul}" berhasil disimpan via CLI!`);
   }
   kembaliKeMenu();
 }
 
-// 3. TANDAI SELESAI (UPDATE)
+// 3. TANDAI SELESAI CLI
 async function selesaiTugas() {
   const res = await pool.query('SELECT * FROM todos ORDER BY deadline ASC');
   const todos = res.rows;
@@ -195,21 +246,15 @@ async function selesaiTugas() {
   }));
 
   const jawaban = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'idTugas',
-      message: 'Pilih tugas yang sudah selesai:',
-      choices: pilihanTugas
-    }
+    { type: 'list', name: 'idTugas', message: 'Pilih tugas yang sudah selesai:', choices: pilihanTugas }
   ]);
 
-  const query = "UPDATE todos SET status = 'Selesai' WHERE id = $1";
-  await pool.query(query, [jawaban.idTugas]);
-  console.log(`\n👍 Tugas ID ${jawaban.idTugas} berhasil diselesaikan di database!`);
+  await pool.query("UPDATE todos SET status = 'Selesai' WHERE id = $1", [jawaban.idTugas]);
+  console.log(`\n👍 Tugas ID ${jawaban.idTugas} berhasil diupdate via CLI!`);
   kembaliKeMenu();
 }
 
-// 4. HAPUS TUGAS (DELETE)
+// 4. HAPUS TUGAS CLI
 async function hapusTugas() {
   const res = await pool.query('SELECT * FROM todos ORDER BY deadline ASC');
   const todos = res.rows;
@@ -225,21 +270,15 @@ async function hapusTugas() {
   }));
 
   const jawaban = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'idTugas',
-      message: 'Pilih tugas yang ingin dihapus secara permanen:',
-      choices: pilihanTugas
-    }
+    { type: 'list', name: 'idTugas', message: 'Pilih tugas yang ingin dihapus permanen:', choices: pilihanTugas }
   ]);
 
-  const query = "DELETE FROM todos WHERE id = $1";
-  await pool.query(query, [jawaban.idTugas]);
-  console.log(`\n🗑️ Tugas ID ${jawaban.idTugas} berhasil dihapus dari PostgreSQL!`);
+  await pool.query("DELETE FROM todos WHERE id = $1", [jawaban.idTugas]);
+  console.log(`\n🗑️ Tugas ID ${jawaban.idTugas} berhasil dihapus via CLI!`);
   kembaliKeMenu();
 }
 
-// 5. EDIT TUGAS (UPDATE DINAMIS)
+// 5. EDIT TUGAS CLI
 async function editTugas() {
   const res = await pool.query('SELECT * FROM todos ORDER BY deadline ASC');
   const todos = res.rows;
@@ -255,17 +294,8 @@ async function editTugas() {
   }));
 
   const jawaban = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'idTugas',
-      message: 'Pilih tugas yang ingin diubah:',
-      choices: pilihanTugas
-    },
-    {
-      type: 'input',
-      name: 'judulBaru',
-      message: 'Masukkan judul baru (Kosongkan jika tidak diubah):'
-    },
+    { type: 'list', name: 'idTugas', message: 'Pilih tugas yang ingin diubah:', choices: pilihanTugas },
+    { type: 'input', name: 'judulBaru', message: 'Masukkan judul baru (Kosongkan jika tidak diubah):' },
     {
       type: 'input',
       name: 'deadlineBaru',
@@ -283,31 +313,63 @@ async function editTugas() {
   const judulFinal = jawaban.judulBaru.trim() !== '' ? jawaban.judulBaru : todoSkg.title;
   const deadlineFinal = jawaban.deadlineBaru.trim() !== '' ? jawaban.deadlineBaru : todoSkg.deadline;
 
-  const query = 'UPDATE todos SET title = $1, deadline = $2 WHERE id = $3';
-  await pool.query(query, [judulFinal, deadlineFinal, jawaban.idTugas]);
-  
-  console.log(`\n✅ Data tugas ID ${jawaban.idTugas} berhasil diperbarui di PostgreSQL!`);
+  await pool.query('UPDATE todos SET title = $1, deadline = $2 WHERE id = $3', [judulFinal, deadlineFinal, jawaban.idTugas]);
+  console.log(`\n✅ Data tugas ID ${jawaban.idTugas} berhasil diperbarui via CLI!`);
   kembaliKeMenu();
 }
 
-// KEMBALI KE MENU UTAMA
 function kembaliKeMenu() {
   console.log('---------------------------------');
   inquirer.prompt([
-    {
-      type: 'input',
-      name: 'lanjut',
-      message: 'Tekan ENTER untuk kembali ke menu utama...'
-    }
+    { type: 'input', name: 'lanjut', message: 'Tekan ENTER untuk kembali ke menu utama...' }
   ]).then(() => {
     mainMenu();
   });
 }
 
-// STARTING POINT APLIKASI
-async function startApp() {
-  await initDatabase(); // Bikin tabel dulu jika belum ada
-  await mainMenu();     // Buka menu utama
+// =========================================================
+//                STARTING POINT JALUR SINKRON
+// =========================================================
+initDatabase().then(() => {
+  // 1. Jalankan Server Web Express di Background
+  app.listen(port, () => {
+    console.clear();
+    console.log(`🚀 Server Web berjalan di http://localhost:${port}`);
+    console.log(`💡 Menyalakan Interface CLI terminal... Tunggu sebentar...\n`);
+    
+    // 2. Jalankan Menu Utama Inquirer CLI setelah server web siap
+    setTimeout(() => {
+      mainMenu();
+    }, 1500);
+  });
+});
+
+
+// =========================================================
+//            [BAGIAN C] OPTIMASI: GRACEFUL SHUTDOWN
+// =========================================================
+
+// Fungsi untuk mematikan aplikasi secara bersih saat menerima sinyal stop dari Docker/Terminal
+async function shutdown(signal) {
+  console.log(`\n📢 Menerima sinyal ${signal}. Memulai proses pemutusan koneksi aman...`);
+  
+  try {
+    // 1. Tutup pool koneksi database PostgreSQL
+    console.log('⏳ Memutuskan koneksi pool ke PostgreSQL...');
+    await pool.end();
+    console.log('✅ Koneksi database berhasil diputus dengan bersih.');
+    
+    // 2. Keluar dari proses aplikasi Node.js
+    console.log('👋 Sampai jumpa! Aplikasi berhenti dengan aman.');
+    process.exit(0);
+  } catch (err) {
+    console.error('🚨 Eror saat mematikan aplikasi:', err.message);
+    process.exit(1);
+  }
 }
 
-startApp();
+// Mendengarkan sinyal interupsi (CTRL+C di terminal)
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Mendengarkan sinyal terminasi (Perintah stop dari Docker Desktop / docker compose down)
+process.on('SIGTERM', () => shutdown('SIGTERM'));

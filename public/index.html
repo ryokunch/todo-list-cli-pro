@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To-Do List Pro — Dashboard</title>
+    <!-- Menggunakan Font Inter agar teks terlihat modern dan clean -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-main: #f8fafc;
+            --surface: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --border: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            margin: 0;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 850px;
+            margin: 0 auto;
+        }
+
+        /* HEADER UI */
+        header {
+            margin-bottom: 32px;
+            text-align: left;
+        }
+
+        header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin: 0 0 6px 0;
+            color: var(--text-main);
+        }
+
+        header p {
+            color: var(--text-muted);
+            margin: 0;
+            font-size: 14px;
+        }
+
+        /* STATS CARD GRID */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .card-stat {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+        }
+
+        .card-stat .label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .card-stat .value {
+            font-size: 24px;
+            font-weight: 700;
+            margin-top: 6px;
+            color: var(--text-main);
+        }
+
+        /* CONTENT LAYOUT */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 24px;
+        }
+
+        /* FORM BOX */
+        .form-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            height: fit-content;
+        }
+
+        .form-box h3 {
+            margin: 0 0 16px 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: var(--text-muted);
+        }
+
+        input[type="text"], input[type="date"] {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-family: inherit;
+            font-size: 14px;
+            box-sizing: border-box;
+            background-color: #fafafa;
+            transition: all 0.2s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            background-color: var(--surface);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        button.btn-primary {
+            width: 100%;
+            padding: 11px;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button.btn-primary:hover {
+            background-color: var(--primary-hover);
+        }
+
+        /* TODO LIST CONTAINER */
+        .todo-container {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        }
+
+        .todo-container h3 {
+            margin: 0 0 16px 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .todo-item {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+
+        .todo-item:last-child {
+            border-bottom: none;
+        }
+
+        .todo-item:hover {
+            background-color: #f8fafc;
+        }
+
+        .todo-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .todo-title {
+            font-weight: 500;
+            font-size: 15px;
+            color: var(--text-main);
+        }
+
+        .todo-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* BADGES */
+        .badge {
+            padding: 2px 8px;
+            border-radius: 99px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .badge-success { background: #d1fae5; color: #065f46; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-danger { background: #fee2e2; color: #991b1b; }
+        .badge-info { background: #e0f2fe; color: #0369a1; }
+
+        /* ACTION BUTTONS */
+        .action-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-icon {
+            border: 1px solid var(--border);
+            background: var(--surface);
+            border-radius: 6px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .btn-icon-success:hover { background: var(--success); color: white; border-color: var(--success); }
+        .btn-icon-danger:hover { background: var(--danger); color: white; border-color: var(--danger); }
+
+        /* REKAYASA STRUKTUR SELESAI */
+        .todo-item.Selesai .todo-title {
+            text-decoration: line-through;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Workspace Tasks</h1>
+            <p>Manajemen kontrol tugas terintegrasi Engine PostgreSQL</p>
+        </header>
+
+        <!-- DASHBOARD STATISTIK MINI -->
+        <div class="stats-grid">
+            <div class="card-stat" style="border-left: 4px solid var(--primary);">
+                <div class="label">Total Tugas</div>
+                <div class="value" id="stat-total">0</div>
+            </div>
+            <div class="card-stat" style="border-left: 4px solid var(--success);">
+                <div class="label">Selesai</div>
+                <div class="value" id="stat-selesai">0</div>
+            </div>
+            <div class="card-stat" style="border-left: 4px solid var(--warning);">
+                <div class="label">Belum Selesai</div>
+                <div class="value" id="stat-belum">0</div>
+            </div>
+            <div class="card-stat" style="border-left: 4px solid var(--danger);">
+                <div class="label">Terlambat</div>
+                <div class="value" id="stat-terlambat">0</div>
+            </div>
+        </div>
+
+        <!-- MAIN LAYOUT -->
+        <div class="main-layout">
+            <!-- SEKSI FORM INPUT -->
+            <div class="form-box">
+                <h3>Tambah Tugas</h3>
+                <div class="form-group">
+                    <label for="title">NAMA TUGAS</label>
+                    <input type="text" id="title" placeholder="Contoh: Sprint 5 Absenta">
+                </div>
+                <div class="form-group">
+                    <label for="deadline">BATAS WAKTU (DEADLINE)</label>
+                    <input type="date" id="deadline">
+                </div>
+                <button class="btn-primary" onclick="addTodo()">Simpan ke Database</button>
+            </div>
+
+            <!-- SEKSI DAFTAR TUGAS -->
+            <div class="todo-container">
+                <h3>Daftar Tugas Aktif</h3>
+                <div id="todo-list">
+                    <!-- Data dimasukkan via Javascript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Fungsi Kalkulasi Waktu untuk Badge (Menyamakan Logika CLI ke Web UI)
+        function hitungUrgenitas(deadlineStr, status) {
+            if (status === 'Selesai') {
+                return `<span class="badge badge-success">✅ Selesai</span>`;
+            }
+
+            const hariIni = new Date();
+            hariIni.setHours(0,0,0,0);
+            const tanggalDeadline = new Date(deadlineStr);
+            tanggalDeadline.setHours(0,0,0,0);
+
+            if (tanggalDeadline < hariIni) {
+                return `<span class="badge badge-danger">🚨 Terlambat</span>`;
+            } else if (tanggalDeadline.getTime() === hariIni.getTime()) {
+                return `<span class="badge badge-warning">⚠️ Hari Ini</span>`;
+            } else {
+                const selisihWaktu = tanggalDeadline.getTime() - hariIni.getTime();
+                const selisihHari = Math.ceil(selisihWaktu / (1000 * 3600 * 24));
+                return `<span class="badge badge-info">⏳ ${selisihHari} Hari Lagi</span>`;
+            }
+        }
+
+        // Memperbarui Kotak Dashboard Statistik Atas secara Real-time
+        function updateDashboardStats(todos) {
+            const total = todos.length;
+            const selesai = todos.filter(t => t.status === 'Selesai').length;
+            const belum = todos.filter(t => t.status === 'Belum Selesai').length;
+            
+            const hariIni = new Date();
+            hariIni.setHours(0,0,0,0);
+            const terlambat = todos.filter(t => {
+                const tgl = new Date(t.deadline);
+                tgl.setHours(0,0,0,0);
+                return t.status === 'Belum Selesai' && tgl < hariIni;
+            }).length;
+
+            document.getElementById('stat-total').innerText = total;
+            document.getElementById('stat-selesai').innerText = selesai;
+            document.getElementById('stat-belum').innerText = belum;
+            document.getElementById('stat-terlambat').innerText = terlambat;
+        }
+
+        // Render & Load Data Utama
+        async function loadTodos() {
+            const res = await fetch('/api/todos');
+            const todos = await res.json();
+            
+            updateDashboardStats(todos);
+            
+            const container = document.getElementById('todo-list');
+            container.innerHTML = '';
+
+            if(todos.length === 0) {
+                container.innerHTML = `<p style="color: var(--text-muted); font-size: 14px; text-align: center; padding: 20px 0;">Belum ada tugas terdaftar di database.</p>`;
+                return;
+            }
+
+            todos.forEach(todo => {
+                const div = document.createElement('div');
+                div.className = `todo-item ${todo.status}`;
+                
+                const tglSaja = new Date(todo.deadline).toISOString().split('T')[0];
+                const badgeWaktu = hitungUrgenitas(todo.deadline, todo.status);
+
+                div.innerHTML = `
+                    <div class="todo-info">
+                        <span class="todo-title">${todo.title}</span>
+                        <div class="todo-meta">
+                            <span>📅 ${tglSaja}</span>
+                            ${badgeWaktu}
+                        </div>
+                    </div>
+                    <div class="action-group">
+                        ${todo.status !== 'Selesai' ? `
+                            <button class="btn-icon btn-icon-success" onclick="completeTodo(${todo.id})" title="Tandai Selesai">✓</button>
+                        ` : ''}
+                        <button class="btn-icon btn-icon-danger" onclick="deleteTodo(${todo.id})" title="Hapus Permanen">🗑️</button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function addTodo() {
+            const title = document.getElementById('title').value;
+            const deadline = document.getElementById('deadline').value;
+            if(!title || !deadline) return alert('Mohon lengkapi judul dan batas waktu!');
+
+            await fetch('/api/todos', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, deadline })
+            });
+            
+            document.getElementById('title').value = '';
+            document.getElementById('deadline').value = '';
+            loadTodos();
+        }
+
+        async function completeTodo(id) {
+            await fetch(`/api/todos/${id}`, { method: 'PUT' });
+            loadTodos();
+        }
+
+        async function deleteTodo(id) {
+            if(confirm('Apakah Anda yakin ingin menghapus tugas ini secara permanen dari database?')) {
+                await fetch(`/api/todos/${id}`, { method: 'DELETE' });
+                loadTodos();
+            }
+        }
+
+        // Init pertama saat dokumen dimuat
+        loadTodos();
+    </script>
+</body>
+</html>

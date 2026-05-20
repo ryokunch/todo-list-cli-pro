@@ -1,33 +1,35 @@
 version: '3.8'
 
 services:
-  # 1. Layanan Aplikasi Node.js kamu
+  # 1. Kontainer Aplikasi Hybrid (Web + CLI Terminal)
   todo-app:
     build: .
     container_name: running-todo-compose
-    stdin_open: true
-    tty: true
+    stdin_open: true  
+    tty: true         
+    ports:
+      - "${APP_PORT}:${APP_PORT}" # Membaca port dinamis dari file .env
     depends_on:
-      - db # Memastikan database jalan duluan sebelum aplikasi dibuka
+      - db
     environment:
-      - DB_HOST=db
-      - DB_USER=ryo_user
-      - DB_PASSWORD=rahasia_ryo
-      - DB_NAME=todo_db
-      - DB_PORT=5432
+      - DB_HOST=${DB_HOST}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_PORT=${DB_PORT}
 
-  # 2. Layanan Database PostgreSQL Asli
+  # 2. Kontainer Database PostgreSQL
   db:
-    image: postgres:16-alpine # Menggunakan versi Alpine yang hemat penyimpanan
+    image: postgres:16-alpine
     container_name: postgres-todo-db
     environment:
-      POSTGRES_USER: ryo_user
-      POSTGRES_PASSWORD: rahasia_ryo
-      POSTGRES_DB: todo_db
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     ports:
-      - "5432:5432"
+      - "${DB_PORT}:${DB_PORT}"
     volumes:
-      - pgdata:/var/lib/postgresql/data # Agar data DB tidak hilang saat kontainer mati
+      - pgdata:/var/lib/postgresql/data
 
 volumes:
-  pgdata: # Mengunci penyimpanan database di memori internal Docker
+  pgdata:
